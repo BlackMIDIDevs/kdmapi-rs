@@ -44,7 +44,24 @@ impl KDMAPIBinds {
 }
 
 fn load_kdmapi_lib() -> Library {
-    unsafe { Library::new("OmniMIDI\\OmniMIDI").unwrap() }
+    unsafe {
+        // Try "OmniMIDI\\OmniMIDI"
+        let lib = Library::new("OmniMIDI\\OmniMIDI");
+        let err = match lib {
+            Ok(lib) => return lib,
+            Err(e) => e,
+        };
+
+        // Try "OmniMIDI"
+        let lib = Library::new("OmniMIDI");
+        let err2 = match lib {
+            Ok(lib) => return lib,
+            Err(e) => e,
+        };
+
+        // Error
+        panic!("Failed to load KDMAPI library: {:?}, {:?}", err, err2);
+    }
 }
 
 fn load_kdmapi_binds(lib: &'static Library) -> KDMAPIBinds {
