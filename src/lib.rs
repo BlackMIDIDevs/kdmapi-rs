@@ -1,7 +1,7 @@
-use std::sync::atomic::AtomicBool;
+use std::{ffi::c_char, sync::atomic::AtomicBool};
 
 use lazy_static::lazy_static;
-use libloading::{Library, Symbol};
+use libloading::{Error, Library, Symbol};
 
 /// The dynamic bindings for KDMAPI
 pub struct KDMAPIBinds {
@@ -11,6 +11,7 @@ pub struct KDMAPIBinds {
     reset_kdmapi_stream: Symbol<'static, unsafe extern "C" fn()>,
     send_direct_data: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
     send_direct_data_no_buf: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
+    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const c_char) -> bool>,
     is_stream_open: AtomicBool,
 }
 
@@ -26,54 +27,60 @@ impl KDMAPIBinds {
     /// Automatically calls `TerminateKDMAPIStream` when dropped.
     ///
     /// Errors if multiple streams are opened in parallel.
-    pub fn open_stream(&'static self) -> KDMAPIStream {
+    pub fn open_stream(&'static self) -> Result<KDMAPIStream, String> {
         if self
             .is_stream_open
             .load(std::sync::atomic::Ordering::Relaxed)
         {
-            panic!("KDMAPI stream is already open");
+            return Err("KDMAPI stream is already open".into());
         }
         unsafe {
             let result = (self.initialize_kdmapi_stream)();
             if result == 0 {
                 panic!("Failed to initialize KDMAPI stream");
             }
-            KDMAPIStream { binds: &self }
+            Ok(KDMAPIStream { binds: self })
         }
     }
 }
 
-fn load_kdmapi_lib() -> Library {
+fn load_kdmapi_lib() -> Result<Library, Error> {
     unsafe {
-        // Try "OmniMIDI\\OmniMIDI"
-        let lib = Library::new("OmniMIDI\\OmniMIDI");
-        let err = match lib {
-            Ok(lib) => return lib,
-            Err(e) => e,
-        };
+        #[cfg(target_os = "windows")]
+        {
+            // Try "OmniMIDI\\OmniMIDI"
+            let lib = Library::new("OmniMIDI\\OmniMIDI");
+            let err = match lib {
+                Ok(lib) => return Ok(lib),
+                Err(e) => {}
+            };
 
-        // Try "OmniMIDI"
-        let lib = Library::new("OmniMIDI");
-        let err2 = match lib {
-            Ok(lib) => return lib,
-            Err(e) => e,
-        };
+            // Try "OmniMIDI"
+            return Library::new("OmniMIDI");
+        }
 
-        // Error
-        panic!("Failed to load KDMAPI library: {:?}, {:?}", err, err2);
+        #[cfg(target_os = "linux")]
+        return Library::new("libOmniMIDI.so");
+
+        #[cfg(target_os = "macos")]
+        return Library::new("libOmniMIDI.dylib");
     }
 }
 
-fn load_kdmapi_binds(lib: &'static Library) -> KDMAPIBinds {
+fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds, &Error> {
     unsafe {
-        KDMAPIBinds {
-            is_kdmapi_available: lib.get(b"IsKDMAPIAvailable").unwrap(),
-            initialize_kdmapi_stream: lib.get(b"InitializeKDMAPIStream").unwrap(),
-            terminate_kdmapi_stream: lib.get(b"TerminateKDMAPIStream").unwrap(),
-            reset_kdmapi_stream: lib.get(b"ResetKDMAPIStream").unwrap(),
-            send_direct_data: lib.get(b"SendDirectData").unwrap(),
-            send_direct_data_no_buf: lib.get(b"SendDirectDataNoBuf").unwrap(),
-            is_stream_open: AtomicBool::new(false),
+        match lib {
+            Ok(lib) => Ok(KDMAPIBinds {
+                is_kdmapi_available: lib.get(b"IsKDMAPIAvailable").unwrap(),
+                initialize_kdmapi_stream: lib.get(b"InitializeKDMAPIStream").unwrap(),
+                terminate_kdmapi_stream: lib.get(b"TerminateKDMAPIStream").unwrap(),
+                reset_kdmapi_stream: lib.get(b"ResetKDMAPIStream").unwrap(),
+                send_direct_data: lib.get(b"SendDirectData").unwrap(),
+                send_direct_data_no_buf: lib.get(b"SendDirectDataNoBuf").unwrap(),
+                load_custom_soundfonts_list: lib.get(b"LoadCustomSoundFontsList").unwrap(),
+                is_stream_open: AtomicBool::new(false),
+            }),
+            Err(err) => Err(err),
         }
     }
 }
@@ -102,6 +109,10 @@ impl KDMAPIStream {
     pub fn send_direct_data_no_buf(&self, data: u32) -> u32 {
         unsafe { (self.binds.send_direct_data_no_buf)(data) }
     }
+
+    pub fn load_custom_soundfonts_list(&self, path: &str) -> bool {
+        unsafe { (self.binds.load_custom_soundfonts_list)(path.as_ptr() as *const i8) }
+    }
 }
 
 impl Drop for KDMAPIStream {
@@ -116,8 +127,8 @@ impl Drop for KDMAPIStream {
 }
 
 lazy_static! {
-    static ref KDMAPI_LIB: Library = load_kdmapi_lib();
+    static ref KDMAPI_LIB: Result<Library, Error> = load_kdmapi_lib();
 
     /// The dynamic library for KDMAPI. Is loaded when this field is accessed.
-    pub static ref KDMAPI: KDMAPIBinds = load_kdmapi_binds(&KDMAPI_LIB);
+    pub static ref KDMAPI: Result<KDMAPIBinds, &'static Error> = load_kdmapi_binds(&KDMAPI_LIB);
 }
