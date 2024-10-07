@@ -1,4 +1,7 @@
-use std::{ffi::c_char, sync::atomic::AtomicBool};
+use std::sync::atomic::AtomicBool;
+
+#[cfg(target_os = "windows")]
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
 
 use lazy_static::lazy_static;
 use libloading::{Error, Library, Symbol};
@@ -11,7 +14,8 @@ pub struct KDMAPIBinds {
     reset_kdmapi_stream: Symbol<'static, unsafe extern "C" fn()>,
     send_direct_data: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
     send_direct_data_no_buf: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
-    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const c_char) -> bool>,
+    #[cfg(target_os = "windows")]
+    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const u16) -> bool>,
     is_stream_open: AtomicBool,
 }
 
@@ -78,6 +82,7 @@ fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds
                 reset_kdmapi_stream: lib.get(b"ResetKDMAPIStream").unwrap(),
                 send_direct_data: lib.get(b"SendDirectData").unwrap(),
                 send_direct_data_no_buf: lib.get(b"SendDirectDataNoBuf").unwrap(),
+                #[cfg(target_os = "windows")]
                 load_custom_soundfonts_list: lib.get(b"LoadCustomSoundFontsList").unwrap(),
                 is_stream_open: AtomicBool::new(false),
             }),
@@ -111,8 +116,13 @@ impl KDMAPIStream {
         unsafe { (self.binds.send_direct_data_no_buf)(data) }
     }
 
+    #[cfg(target_os = "windows")]
     pub fn load_custom_soundfonts_list(&self, path: &str) -> bool {
-        unsafe { (self.binds.load_custom_soundfonts_list)(path.as_ptr() as *const i8) }
+        let path: Vec<u16> = OsStr::new(path)
+            .encode_wide()
+            .chain(Some(0).into_iter())
+            .collect();
+        unsafe { (self.binds.load_custom_soundfonts_list)(path.as_ptr()) }
     }
 }
 
