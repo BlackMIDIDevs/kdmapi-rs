@@ -37,9 +37,10 @@ impl KDMAPIBinds {
         unsafe {
             let result = (self.initialize_kdmapi_stream)();
             if result == 0 {
-                panic!("Failed to initialize KDMAPI stream");
+                Err("Failed to initialize KDMAPI stream".into())
+            } else {
+                Ok(KDMAPIStream { binds: self })
             }
-            Ok(KDMAPIStream { binds: self })
         }
     }
 }
@@ -50,9 +51,9 @@ fn load_kdmapi_lib() -> Result<Library, Error> {
         {
             // Try "OmniMIDI\\OmniMIDI"
             let lib = Library::new("OmniMIDI\\OmniMIDI");
-            let err = match lib {
+            match lib {
                 Ok(lib) => return Ok(lib),
-                Err(e) => {}
+                Err(_e) => {}
             };
 
             // Try "OmniMIDI"
