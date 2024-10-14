@@ -16,6 +16,8 @@ pub struct KDMAPIBinds {
     send_direct_data_no_buf: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
     #[cfg(target_os = "windows")]
     load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const u16) -> bool>,
+    #[cfg(not(target_os = "windows"))]
+    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const u8) -> bool>,
     is_stream_open: AtomicBool,
 }
 
@@ -82,7 +84,6 @@ fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds
                 reset_kdmapi_stream: lib.get(b"ResetKDMAPIStream").unwrap(),
                 send_direct_data: lib.get(b"SendDirectData").unwrap(),
                 send_direct_data_no_buf: lib.get(b"SendDirectDataNoBuf").unwrap(),
-                #[cfg(target_os = "windows")]
                 load_custom_soundfonts_list: lib.get(b"LoadCustomSoundFontsList").unwrap(),
                 is_stream_open: AtomicBool::new(false),
             }),
@@ -116,8 +117,8 @@ impl KDMAPIStream {
         unsafe { (self.binds.send_direct_data_no_buf)(data) }
     }
 
-    #[cfg(target_os = "windows")]
     pub fn load_custom_soundfonts_list(&self, path: &str) -> bool {
+        #[cfg(target_os = "windows")]
         let path: Vec<u16> = OsStr::new(path)
             .encode_wide()
             .chain(Some(0).into_iter())
