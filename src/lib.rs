@@ -15,9 +15,10 @@ pub struct KDMAPIBinds {
     send_direct_data: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
     send_direct_data_no_buf: Symbol<'static, unsafe extern "C" fn(u32) -> u32>,
     #[cfg(target_os = "windows")]
-    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const u16) -> bool>,
+    load_custom_soundfonts_list: Option<Symbol<'static, unsafe extern "C" fn(*const u16) -> bool>>,
     #[cfg(not(target_os = "windows"))]
-    load_custom_soundfonts_list: Symbol<'static, unsafe extern "C" fn(*const u8) -> bool>,
+    load_custom_soundfonts_list: Option<Symbol<'static, unsafe extern "C" fn(*const u8) -> bool>>,
+    get_voice_count: Option<Symbol<'static, unsafe extern "C" fn() -> u32>>,
     is_stream_open: AtomicBool,
 }
 
@@ -84,7 +85,8 @@ fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds
                 reset_kdmapi_stream: lib.get(b"ResetKDMAPIStream").unwrap(),
                 send_direct_data: lib.get(b"SendDirectData").unwrap(),
                 send_direct_data_no_buf: lib.get(b"SendDirectDataNoBuf").unwrap(),
-                load_custom_soundfonts_list: lib.get(b"LoadCustomSoundFontsList").unwrap(),
+                load_custom_soundfonts_list: lib.get(b"LoadCustomSoundFontsList").ok(),
+                get_voice_count: lib.get(b"GetVoiceCount").ok(),
                 is_stream_open: AtomicBool::new(false),
             }),
             Err(err) => Err(err),
@@ -117,13 +119,21 @@ impl KDMAPIStream {
         unsafe { (self.binds.send_direct_data_no_buf)(data) }
     }
 
-    pub fn load_custom_soundfonts_list(&self, path: &str) -> bool {
+    pub fn load_custom_soundfonts_list(&self, path: &str) -> Option<bool> {
         #[cfg(target_os = "windows")]
         let path: Vec<u16> = OsStr::new(path)
             .encode_wide()
             .chain(Some(0).into_iter())
             .collect();
-        unsafe { (self.binds.load_custom_soundfonts_list)(path.as_ptr()) }
+        unsafe {
+            (self.binds.load_custom_soundfonts_list)
+                .as_ref()
+                .map(|f| f(path.as_ptr()))
+        }
+    }
+
+    pub fn get_voice_count(&self) -> Option<u32> {
+        unsafe { (self.binds.get_voice_count).as_ref().map(|f| f()) }
     }
 }
 
