@@ -18,7 +18,7 @@ pub struct KDMAPIBinds {
     load_custom_soundfonts_list: Option<Symbol<'static, unsafe extern "C" fn(*const u16) -> bool>>,
     #[cfg(not(target_os = "windows"))]
     load_custom_soundfonts_list: Option<Symbol<'static, unsafe extern "C" fn(*const u8) -> bool>>,
-    get_voice_count: Option<Symbol<'static, unsafe extern "C" fn() -> u32>>,
+    get_voice_count: Option<Symbol<'static, unsafe extern "C" fn() -> u64>>,
     is_stream_open: AtomicBool,
 }
 
@@ -132,7 +132,7 @@ impl KDMAPIStream {
         }
     }
 
-    pub fn get_voice_count(&self) -> Option<u32> {
+    pub fn get_voice_count(&self) -> Option<u64> {
         unsafe { (self.binds.get_voice_count).as_ref().map(|f| f()) }
     }
 }
