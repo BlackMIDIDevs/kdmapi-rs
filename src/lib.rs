@@ -67,7 +67,13 @@ fn load_kdmapi_lib() -> Result<Library, Error> {
             return Library::new("OmniMIDI");
         }
 
-        #[cfg(target_os = "linux")]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
         return Library::new("libOmniMIDI.so");
 
         #[cfg(target_os = "macos")]
@@ -75,7 +81,7 @@ fn load_kdmapi_lib() -> Result<Library, Error> {
     }
 }
 
-fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds, &Error> {
+fn load_kdmapi_binds(lib: &'static Result<Library, Error>) -> Result<KDMAPIBinds, &'static Error> {
     unsafe {
         match lib {
             Ok(lib) => Ok(KDMAPIBinds {
